@@ -6,11 +6,11 @@ It provides simple and interactive cli controls to fetch repository metadata, fe
 ## Dependancies
 The app uses postgres as a persistent so you will need have postgres running and configure 
 the environment variables.
-- DB_HOST = <pg-address>
-- DB_PORT = <pg-port>
-- DB_NAME =  <name-of-database>
-- DB_USER =  <pg-username>
-- DB_PASSWORD =  <pg-password>
+- DB_HOST = < pg-address >
+- DB_PORT = < pg-port >
+- DB_NAME =  < name-of-database >
+- DB_USER =  < pg-username >
+- DB_PASSWORD =  < pg-password >
 
 If you don't have postgres. You can use the simple docker compose file in this repo to pull and run postgres easily.
 

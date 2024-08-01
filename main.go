@@ -68,7 +68,7 @@ var currentMenu *Menu
 
 func main() {
 	// start refresh cron job
-	// startCRON()
+	startCRON()
 
 	err := termbox.Init()
 	if err != nil {

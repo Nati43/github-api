@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -58,7 +59,8 @@ func FetchCommits(repo_url string, start *time.Time) ([]Commit, error) {
 	// get repo from repos table
 	repo, err := GetRepoByURL(repo_url)
 	if err != nil {
-		fmt.Println("Error getting repository from database : ", err)
+		LogError(fmt.Errorf("error getting repository from database : %v", err))
+		return nil, err
 	}
 
 	URL := repo_url + "/commits"
@@ -66,71 +68,94 @@ func FetchCommits(repo_url string, start *time.Time) ([]Commit, error) {
 		URL += "?since=" + start.Format("2006-01-02T15:04:05Z")
 	}
 
-	// create the request
-	req, err := NewRequest("GET", URL, nil)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// create https client and execute the request
-	client := http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer resp.Body.Close()
-
-	// read the response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Error reading response : ", err)
-		fmt.Println(err)
-	}
-
 	commits := []Commit{}
-	response := []struct {
-		SHA    string `json:"sha"`
-		URL    string `json:"url"`
-		Commit struct {
-			Message string `json:"message"`
-			Author  struct {
-				AuthorName  string    `json:"name"`
-				AuthorEmail string    `json:"email"`
-				Date        time.Time `json:"date"`
-			} `json:"author"`
-		} `json:"commit"`
-	}{}
-
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		fmt.Println("Error parsing commits : ", err)
-		return nil, err
-	}
-
-	for _, c := range response {
-		commits = append(commits, Commit{
-			SHA:          c.SHA,
-			Message:      c.Commit.Message,
-			URL:          c.URL,
-			AuthorName:   c.Commit.Author.AuthorName,
-			AuthorEmail:  c.Commit.Author.AuthorEmail,
-			Date:         c.Commit.Author.Date,
-			RepositoryID: repo.ID,
-		})
-	}
 
 	// clear existing commits
 	err = DeleteCommitByRepoID(repo.ID)
 	if err != nil {
+		LogError(fmt.Errorf("error clearing commits : %v", err))
 		return nil, err
 	}
 
-	// save commits
-	for _, commit := range commits {
-		commit.RepositoryID = repo.ID
-		err = commit.Save()
+	for URL != "" {
+		// create the request
+		req, err := NewRequest("GET", URL, nil)
 		if err != nil {
-			fmt.Println("Error saving commit : ", err)
+			LogError(fmt.Errorf("error creating commit request : %v", err))
+			return nil, err
+		}
+
+		// create https client and execute the request
+		client := http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			LogError(fmt.Errorf("error with commits request : %v", err))
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			// check for rate limit and wait for reset time
+			resetTimeStr := resp.Header.Get("X-RateLimit-Reset")
+			resetTimeInt, err := strconv.ParseInt(resetTimeStr, 10, 64)
+			if err != nil {
+				LogError(fmt.Errorf("error parsing X-RateLimit-Reset : %s", err))
+			}
+
+			resetTime := time.Unix(resetTimeInt, 0)
+			LogApp(fmt.Sprintf("Rate limit exceeded. Waiting until %v (%v seconds)...\n", resetTime, time.Until(resetTime)))
+			time.Sleep(time.Until(resetTime))
+			continue
+		}
+
+		// set URL to next page link, will be empty and break loop if no next link
+		URL = GetNextFromLinkHeader(resp.Header.Get("link"))
+
+		// read the response
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			LogError(fmt.Errorf("error reading commits response : %v", err))
+			return nil, err
+		}
+
+		response := []struct {
+			SHA    string `json:"sha"`
+			URL    string `json:"url"`
+			Commit struct {
+				Message string `json:"message"`
+				Author  struct {
+					AuthorName  string    `json:"name"`
+					AuthorEmail string    `json:"email"`
+					Date        time.Time `json:"date"`
+				} `json:"author"`
+			} `json:"commit"`
+		}{}
+
+		err = json.Unmarshal(body, &response)
+		if err != nil {
+			LogError(fmt.Errorf("error parsing commits : %v", err))
+			return nil, err
+		}
+
+		for _, c := range response {
+			commits = append(commits, Commit{
+				SHA:          c.SHA,
+				Message:      c.Commit.Message,
+				URL:          c.URL,
+				AuthorName:   c.Commit.Author.AuthorName,
+				AuthorEmail:  c.Commit.Author.AuthorEmail,
+				Date:         c.Commit.Author.Date,
+				RepositoryID: repo.ID,
+			})
+		}
+
+		// save commits
+		for _, commit := range commits {
+			commit.RepositoryID = repo.ID
+			err = commit.Save()
+			if err != nil {
+				LogError(fmt.Errorf("error saving commit : %v", err))
+			}
 		}
 	}
 
@@ -140,73 +165,100 @@ func FetchCommitsNoOverride(repo_url string, start *time.Time) ([]Commit, error)
 	// get repo from repos table
 	repo, err := GetRepoByURL(repo_url)
 	if err != nil {
-		fmt.Println("Error getting repository from database : ", err)
+		LogError(fmt.Errorf("error getting repository from database : %v", err))
+		return nil, err
 	}
 
+	// create base url for fetching the commits
 	URL := repo_url + "/commits"
 	if start != nil {
 		URL += "?since=" + start.Format("2006-01-02T15:04:05Z")
 	}
 
-	// create the request
-	req, err := NewRequest("GET", URL, nil)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// create https client and execute the request
-	client := http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer resp.Body.Close()
-
-	// read the response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		LogError(fmt.Errorf("error reading commits response : %v", err))
-	}
-
 	commits := []Commit{}
-	response := []struct {
-		SHA    string `json:"sha"`
-		URL    string `json:"url"`
-		Commit struct {
-			Message string `json:"message"`
-			Author  struct {
-				AuthorName  string    `json:"name"`
-				AuthorEmail string    `json:"email"`
-				Date        time.Time `json:"date"`
-			} `json:"author"`
-		} `json:"commit"`
-	}{}
 
-	LogApp("Response : " + string(body))
-
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		LogError(fmt.Errorf("error parsing commits : %v", err))
-	}
-
-	for _, c := range response {
-		commits = append(commits, Commit{
-			SHA:          c.SHA,
-			Message:      c.Commit.Message,
-			URL:          c.URL,
-			AuthorName:   c.Commit.Author.AuthorName,
-			AuthorEmail:  c.Commit.Author.AuthorEmail,
-			Date:         c.Commit.Author.Date,
-			RepositoryID: repo.ID,
-		})
-	}
-
-	// save commits
-	for _, commit := range commits {
-		commit.RepositoryID = repo.ID
-		err = commit.Save()
+	// run loop while there's a url to fetch commits (could be pages)
+	for URL != "" {
+		// create the request
+		req, err := NewRequest("GET", URL, nil)
 		if err != nil {
-			LogError(fmt.Errorf("error saving commits : %v", err))
+			LogError(fmt.Errorf("error creating commit request : %v", err))
+			return nil, err
+		}
+
+		// create https client and execute the request
+		client := http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			LogError(fmt.Errorf("error with commits request : %v", err))
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			// check for rate limit and wait for reset time
+			resetTimeStr := resp.Header.Get("X-RateLimit-Reset")
+			resetTimeInt, err := strconv.ParseInt(resetTimeStr, 10, 64)
+			if err != nil {
+				LogError(fmt.Errorf("error parsing X-RateLimit-Reset : %s", err))
+			}
+
+			resetTime := time.Unix(resetTimeInt, 0)
+			LogApp(fmt.Sprintf("Rate limit exceeded. Waiting until %v (%v seconds)...\n", resetTime, time.Until(resetTime)))
+			time.Sleep(time.Until(resetTime))
+			continue
+		}
+
+		// set URL to next page link, will be empty and break loop if no next link
+		URL = GetNextFromLinkHeader(resp.Header.Get("link"))
+
+		// read the response
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			LogError(fmt.Errorf("error reading commits response : %v", err))
+			return nil, err
+		}
+
+		response := []struct {
+			SHA    string `json:"sha"`
+			URL    string `json:"url"`
+			Commit struct {
+				Message string `json:"message"`
+				Author  struct {
+					AuthorName  string    `json:"name"`
+					AuthorEmail string    `json:"email"`
+					Date        time.Time `json:"date"`
+				} `json:"author"`
+			} `json:"commit"`
+		}{}
+
+		LogApp("Response : " + string(body))
+
+		err = json.Unmarshal(body, &response)
+		if err != nil {
+			LogError(fmt.Errorf("error parsing commits : %v", err))
+			return nil, err
+		}
+
+		for _, c := range response {
+			commits = append(commits, Commit{
+				SHA:          c.SHA,
+				Message:      c.Commit.Message,
+				URL:          c.URL,
+				AuthorName:   c.Commit.Author.AuthorName,
+				AuthorEmail:  c.Commit.Author.AuthorEmail,
+				Date:         c.Commit.Author.Date,
+				RepositoryID: repo.ID,
+			})
+		}
+
+		// save commits
+		for _, commit := range commits {
+			commit.RepositoryID = repo.ID
+			err = commit.Save()
+			if err != nil {
+				LogError(fmt.Errorf("error saving commits : %v", err))
+			}
 		}
 	}
 
@@ -216,7 +268,7 @@ func FetchCommitsNoOverride(repo_url string, start *time.Time) ([]Commit, error)
 func GetCommits(repo_id int) ([]Commit, error) {
 	db, err := SQLConnect()
 	if err != nil {
-		fmt.Println("Error connecting to the database : ", err)
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return nil, err
 	}
 
@@ -227,6 +279,7 @@ func GetCommits(repo_id int) ([]Commit, error) {
 		err = rows.Scan(&c.SHA, &c.Message, &c.URL, &c.AuthorName,
 			&c.AuthorEmail, &c.Date, &c.RepositoryID)
 		if err != nil {
+			LogError(fmt.Errorf("error scanning commit result : %v", err))
 			return nil, err
 		}
 
@@ -239,7 +292,7 @@ func GetCommits(repo_id int) ([]Commit, error) {
 func GetLastCommit(repo_id int) (*Commit, error) {
 	db, err := SQLConnect()
 	if err != nil {
-		fmt.Println("Error connecting to the database : ", err)
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return nil, err
 	}
 
@@ -248,6 +301,7 @@ func GetLastCommit(repo_id int) (*Commit, error) {
 	err = row.Scan(&c.SHA, &c.Message, &c.URL, &c.AuthorName,
 		&c.AuthorEmail, &c.Date, &c.RepositoryID)
 	if err != nil {
+		LogError(fmt.Errorf("error scanning commit result : %v", err))
 		return nil, err
 	}
 
@@ -263,7 +317,7 @@ type Author struct {
 func GetTopAuthors(repo_id, n int) ([]Author, error) {
 	db, err := SQLConnect()
 	if err != nil {
-		fmt.Println("Error connecting to the database : ", err)
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return nil, err
 	}
 
@@ -281,14 +335,14 @@ func GetTopAuthors(repo_id, n int) ([]Author, error) {
 
 	rows, err := db.Query(qry, repo_id)
 	if err != nil {
-		fmt.Println("Error getting top authors from db : ", err)
+		LogError(fmt.Errorf("error getting top authors from db : %v", err))
 		return nil, err
 	}
 	for rows.Next() {
 		a := Author{}
 		err = rows.Scan(&a.AuthorName, &a.AuthorEmail, &a.Commits)
 		if err != nil {
-
+			LogError(fmt.Errorf("error scanning authors result : %v", err))
 			return nil, err
 		}
 
@@ -301,12 +355,13 @@ func GetTopAuthors(repo_id, n int) ([]Author, error) {
 func DeleteCommitByRepoID(repo_id int) error {
 	db, err := SQLConnect()
 	if err != nil {
-		fmt.Println("Error connecting to the database : ", err)
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return err
 	}
 
 	_, err = db.Exec("DELETE FROM commits WHERE repository_id=$1", repo_id)
 	if err != nil {
+		LogError(fmt.Errorf("error deleting commits : %v", err))
 		return err
 	}
 
@@ -318,6 +373,7 @@ func init() {
 	// make sure commits table exists
 	db, err := SQLConnect()
 	if err != nil {
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return
 	}
 
@@ -334,6 +390,6 @@ func init() {
 
 	_, err = db.Exec(create)
 	if err != nil {
-		fmt.Println("Error creating commits table : ", err)
+		LogError(fmt.Errorf("error creating commits table : %v", err))
 	}
 }

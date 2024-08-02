@@ -74,50 +74,52 @@ func (r *Repository) Save() error {
 
 // FetchRepo fetchs the repository metadata from github, stores it, and return it
 func FetchRepo(repo_url string) (*Repository, error) {
-	// data := url.Values{}
-	// data.Set("grant_type", "authorization_code")
-	// data.Add("code", code)
-	// data.Add("redirect_uri", Config.RedirectUri)
-
-	// req, err := NewRequest("GET", repo_url, bytes.NewBufferString(data.Encode()))
 	req, err := NewRequest("GET", repo_url, nil)
 	if err != nil {
-		fmt.Println(err)
+		LogError(fmt.Errorf("error creating repository request : %v", err))
+		return nil, err
 	}
 
 	client := http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
+		LogError(fmt.Errorf("error with repository request : %v", err))
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Error reading response : ", err)
-		fmt.Println(err)
-	}
+	if resp.StatusCode == http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			LogError(fmt.Errorf("error reading repository response  : %v", err))
+			return nil, err
+		}
 
-	repo := new(Repository)
-	err = json.Unmarshal(body, &repo)
-	if err != nil {
-		fmt.Println("Error parsing metadata : ", err)
+		repo := new(Repository)
+		err = json.Unmarshal(body, &repo)
+		if err != nil {
+			LogError(fmt.Errorf("error parsing repository metadata : %v", err))
+			return nil, err
+		}
+
+		err = repo.Save()
+		if err != nil {
+			LogError(fmt.Errorf("error saving repository metadata : %v", err))
+			return repo, err
+		}
+
+		return repo, nil
+	} else {
+		err = fmt.Errorf("error fetching repo : %v, %v", resp.StatusCode, resp.Status)
+		LogError(err)
 		return nil, err
 	}
-
-	err = repo.Save()
-	if err != nil {
-		fmt.Println("Error saving metadata : ", err)
-		return repo, err
-	}
-
-	return repo, nil
 }
 
 func GetRepos() ([]Repository, error) {
 	db, err := SQLConnect()
 	if err != nil {
-		fmt.Println("Error connecting to the database : ", err)
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return nil, err
 	}
 
@@ -130,6 +132,7 @@ func GetRepos() ([]Repository, error) {
 			&r.ForksCount, &r.StarsCount, &r.OpenIssuesCount,
 			&r.WatchersCount, &r.Created, &r.Pushed, &r.Updated)
 		if err != nil {
+			LogError(fmt.Errorf("error scanning repository result  : %v", err))
 			return nil, err
 		}
 
@@ -142,7 +145,7 @@ func GetRepos() ([]Repository, error) {
 func GetRepoByID(id int) (*Repository, error) {
 	db, err := SQLConnect()
 	if err != nil {
-		fmt.Println("Error connecting to the database : ", err)
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return nil, err
 	}
 
@@ -153,6 +156,7 @@ func GetRepoByID(id int) (*Repository, error) {
 		&r.ForksCount, &r.StarsCount, &r.OpenIssuesCount,
 		&r.WatchersCount, &r.Created, &r.Pushed, &r.Updated)
 	if err != nil {
+		LogError(fmt.Errorf("error scanning repository response : %v", err))
 		return nil, err
 	}
 
@@ -173,7 +177,7 @@ func GetRepoByURL(repo_url string) (*Repository, error) {
 		&r.ForksCount, &r.StarsCount, &r.OpenIssuesCount,
 		&r.WatchersCount, &r.Created, &r.Pushed, &r.Updated)
 	if err != nil {
-		return nil, err
+		LogError(fmt.Errorf("error scanning repository response : %v", err))
 	}
 
 	return r, nil
@@ -184,6 +188,7 @@ func init() {
 	// make sure repositories table exists
 	db, err := SQLConnect()
 	if err != nil {
+		LogError(fmt.Errorf("error connecting to the database : %v", err))
 		return
 	}
 
@@ -204,6 +209,6 @@ func init() {
 
 	_, err = db.Exec(create)
 	if err != nil {
-		fmt.Println("Error creating repositories table : ", err)
+		LogError(fmt.Errorf("error creating repositories table : %v", err))
 	}
 }

@@ -109,7 +109,7 @@ func handleSelect() {
 			// List repos selected
 			repositories, err = GetRepos()
 			if err != nil {
-				fmt.Println("Error getting repositories from db : ", err)
+				LogError(fmt.Errorf("error getting repositories from db : %v", err))
 			}
 			repos = []string{}
 			repos = append(repos, fmt.Sprintf("ID\t\t\tName\t\t\tLanguage\t\t\tForks\t\t\tStars\t\t\tIssues\t\t\tWatchers"))
@@ -127,36 +127,45 @@ func handleSelect() {
 		case 1:
 			// add repo selected
 			url := promptForRepoURL()
-			// fetch commits
-			y := 2
-			drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("Fetching rep : %v", url))
-			y++
-			termbox.Flush()
-			time.Sleep(2 * time.Second)
-
-			_, err := FetchRepo(url)
-			if err != nil {
-				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("Error fetching repository : %v", err))
+			if url == "" {
+				drawText(0, 0, termbox.ColorRed, termbox.ColorBlack, "Invalid URL")
+				currentMenu = mainMenu
+				currentMenu.selected = 1
+			} else {
+				y := 2
+				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("fetching rep : %v", url))
 				y++
-			}
+				termbox.Flush()
+				time.Sleep(2 * time.Second)
 
-			repositories, err = GetRepos()
-			if err != nil {
-				fmt.Println("Error getting repositories from db : ", err)
-			}
-			repos = []string{}
-			repos = append(repos, fmt.Sprintf("ID\t\t\tName\t\t\tLanguage\t\t\tForks\t\t\tStars\t\t\tIssues\t\t\tWatchers"))
-			for _, r := range repositories {
-				repos = append(repos, fmt.Sprintf("%d\t\t\t%s\t\t\t%s\t\t\t%d\t\t\t%d\t\t\t%d\t\t\t%d",
-					r.ID, r.Name, r.Language,
-					r.ForksCount, r.StarsCount,
-					r.OpenIssuesCount, r.WatchersCount))
-			}
-			repos = append(repos, "Back")
-			reposList.items = repos
+				_, err := FetchRepo(url)
+				if err != nil {
+					drawText(0, y, termbox.ColorRed, termbox.ColorBlack, fmt.Sprintf("error fetching repository : %v", err))
+					y++
+					termbox.Flush()
+					time.Sleep(5 * time.Second)
+					currentMenu = mainMenu
+					currentMenu.selected = 1
+				} else {
+					repositories, err = GetRepos()
+					if err != nil {
+						LogError(fmt.Errorf("error getting repositories from db : %v", err))
+					}
+					repos = []string{}
+					repos = append(repos, fmt.Sprintf("ID\t\t\tName\t\t\tLanguage\t\t\tForks\t\t\tStars\t\t\tIssues\t\t\tWatchers"))
+					for _, r := range repositories {
+						repos = append(repos, fmt.Sprintf("%d\t\t\t%s\t\t\t%s\t\t\t%d\t\t\t%d\t\t\t%d\t\t\t%d",
+							r.ID, r.Name, r.Language,
+							r.ForksCount, r.StarsCount,
+							r.OpenIssuesCount, r.WatchersCount))
+					}
+					repos = append(repos, "Back")
+					reposList.items = repos
 
-			currentMenu = reposList
-			currentMenu.selected = len(reposList.items) - 2
+					currentMenu = reposList
+					currentMenu.selected = len(reposList.items) - 2
+				}
+			}
 		case 2:
 			// exit
 			termbox.Close()
@@ -184,7 +193,7 @@ func handleSelect() {
 			// commits
 			commits, err = GetCommits(repository.ID)
 			if err != nil {
-				fmt.Println("Error getting repositories from db : ", err)
+				LogError(fmt.Errorf("error getting repositories from db : %v", err))
 			}
 
 			commitsShort = []string{}
@@ -213,7 +222,7 @@ func handleSelect() {
 				y++
 			}
 
-			if t != nil {
+			if !t.IsZero() {
 				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("Pulling commits since : %v", t.Format("2006-01-02")))
 			} else {
 				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("Pulling commits from start"))
@@ -375,7 +384,15 @@ func promptForRepoURL() string {
 		}
 	}
 
-	return string(input)
+	url, err := SanitizeRepoURL(string(input))
+	if err != nil {
+		LogError(fmt.Errorf("error parsing url : %v", err))
+		drawText(x, y, termbox.ColorRed, termbox.ColorBlack, "Unable to parse the URL : "+err.Error())
+		termbox.Flush()
+		time.Sleep(3 * time.Second)
+	}
+
+	return url
 }
 
 func startCRON() {

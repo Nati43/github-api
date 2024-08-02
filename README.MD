@@ -9,7 +9,7 @@ the environment variables.
 - DB_HOST = < pg-address >
 - DB_PORT = < pg-port >
 - DB_NAME =  < name-of-database >
-- DB_USER =  < pg-username >
+- DB_USERNAME =  < pg-username >
 - DB_PASSWORD =  < pg-password >
 
 If you don't have postgres. You can use the simple docker compose file in this repo to pull and run postgres easily.

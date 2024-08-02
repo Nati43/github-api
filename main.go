@@ -59,7 +59,7 @@ var commitsList = &Menu{
 }
 
 var authorsList = &Menu{
-	title:  "Commits",
+	title:  "Authors",
 	items:  []string{},
 	parent: repoMenu,
 }
@@ -254,7 +254,7 @@ func handleSelect() {
 			}
 
 			authorsShort := []string{}
-			authorsShort = append(commitsShort, fmt.Sprintf("Commits\t\t\t\tEmail\t\t\t\tName"))
+			authorsShort = append(authorsShort, fmt.Sprintf("Commits\t\t\t\tEmail\t\t\t\tName"))
 			for _, a := range authors {
 
 				authorsShort = append(authorsShort, fmt.Sprintf("%d\t\t\t\t%s\t\t\t\t%s",
@@ -271,6 +271,13 @@ func handleSelect() {
 			currentMenu.selected = 0
 		}
 	case "Commits":
+		switch currentMenu.selected {
+		case len(currentMenu.items) - 1:
+			// back selected
+			currentMenu = currentMenu.parent
+			currentMenu.selected = 0
+		}
+	case "Authors":
 		switch currentMenu.selected {
 		case len(currentMenu.items) - 1:
 			// back selected

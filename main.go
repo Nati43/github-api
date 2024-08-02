@@ -132,7 +132,7 @@ func handleSelect() {
 				currentMenu = mainMenu
 				currentMenu.selected = 1
 			} else {
-				y := 2
+				y++
 				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("fetching rep : %v", url))
 				y++
 				termbox.Flush()
@@ -214,13 +214,14 @@ func handleSelect() {
 			currentMenu.selected = 1
 		case 1:
 			// pull selected
-			y := 2
+			y++
+
 			// take date input from user
 			t, err := promptForDate()
 			if err != nil {
 				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("Error parsing your date : %v", err))
-				y++
 			}
+			y++
 
 			if !t.IsZero() {
 				drawText(0, y, termbox.ColorWhite, termbox.ColorDefault, fmt.Sprintf("Pulling commits since : %v", t.Format("2006-01-02")))
@@ -297,6 +298,7 @@ func handleSelect() {
 }
 
 func drawMenu(menu *Menu) {
+	x, y = 0, 0
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	drawText(0, 0, termbox.ColorWhite, termbox.ColorDefault, menu.title)
 	for i, item := range menu.items {
@@ -309,6 +311,8 @@ func drawMenu(menu *Menu) {
 	termbox.Flush()
 }
 
+var x, y = 0, 0
+
 func drawText(x, y int, fg, bg termbox.Attribute, text string) {
 	for i, c := range text {
 		termbox.SetCell(x+i, y, c, fg, bg)
@@ -316,10 +320,10 @@ func drawText(x, y int, fg, bg termbox.Attribute, text string) {
 }
 
 func promptForDate() (*time.Time, error) {
-	x, y := 0, 0
+	x, y = 0, 0
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	drawText(x, y, termbox.ColorWhite, termbox.ColorDefault, "Please enter a date to pull commits since (YYYY-MM-DD)")
-	y = 1
+	y++
 	l := "Leave emtpt to pull from first commit: "
 	drawText(x, y, termbox.ColorWhite, termbox.ColorDefault, l)
 	x = len(l)
@@ -340,8 +344,8 @@ func promptForDate() (*time.Time, error) {
 			} else if ev.Ch != 0 {
 				input = append(input, ev.Ch)
 			}
-			drawText(x, 1, termbox.ColorWhite, termbox.ColorDefault, strings.Repeat(" ", len(input)+10))
-			drawText(x, 1, termbox.ColorWhite, termbox.ColorDefault, string(input))
+			drawText(x, y, termbox.ColorWhite, termbox.ColorDefault, strings.Repeat(" ", len(input)+10))
+			drawText(x, y, termbox.ColorWhite, termbox.ColorDefault, string(input))
 			termbox.Flush()
 		}
 	}
@@ -360,7 +364,7 @@ func promptForDate() (*time.Time, error) {
 }
 
 func promptForRepoURL() string {
-	x, y := 0, 0
+	x, y = 0, 0
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	drawText(x, y, termbox.ColorWhite, termbox.ColorDefault, "Please enter the repository URL : ")
 	termbox.Flush()

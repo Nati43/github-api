@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/nsf/termbox-go"
 )
 
 type Commit struct {
@@ -103,7 +105,12 @@ func FetchCommits(repo_url string, start *time.Time) ([]Commit, error) {
 			}
 
 			resetTime := time.Unix(resetTimeInt, 0)
-			LogApp(fmt.Sprintf("Rate limit exceeded. Waiting until %v (%v seconds)...\n", resetTime, time.Until(resetTime)))
+			info := fmt.Sprintf("Rate limit exceeded. Waiting until %v (%v seconds)...\n", resetTime, time.Until(resetTime))
+			LogApp(info)
+			y++
+			x = 0
+			drawText(x, y, termbox.ColorCyan, termbox.ColorBlack, info)
+			termbox.Flush()
 			time.Sleep(time.Until(resetTime))
 			continue
 		}
@@ -379,7 +386,7 @@ func init() {
 
 	create := `CREATE TABLE IF NOT EXISTS commits (
 		sha varchar(255) PRIMARY KEY,
-		message varchar(255),
+		message text,
 		url varchar(255) UNIQUE,
 		author_name varchar(255),
 		author_email varchar(255),

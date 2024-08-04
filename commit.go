@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/nsf/termbox-go"
@@ -56,8 +57,16 @@ func (c *Commit) Save() error {
 	return err
 }
 
+var cwg sync.WaitGroup
+
 // FetchCommits fetchs the repository metadata from github, stores it, and return it
 func FetchCommits(repo_url string, start *time.Time) ([]Commit, error) {
+	// wait for any other active jobs
+	cwg.Wait()
+
+	// add to waitgroup
+	cwg.Add(1)
+
 	// get repo from repos table
 	repo, err := GetRepoByURL(repo_url)
 	if err != nil {
@@ -166,9 +175,17 @@ func FetchCommits(repo_url string, start *time.Time) ([]Commit, error) {
 		}
 	}
 
+	cwg.Done()
+
 	return commits, nil
 }
 func FetchCommitsNoOverride(repo_url string, start *time.Time) ([]Commit, error) {
+	// wait for any other active jobs
+	cwg.Wait()
+
+	// add to waitgroup
+	cwg.Add(1)
+
 	// get repo from repos table
 	repo, err := GetRepoByURL(repo_url)
 	if err != nil {
@@ -268,6 +285,8 @@ func FetchCommitsNoOverride(repo_url string, start *time.Time) ([]Commit, error)
 			}
 		}
 	}
+
+	cwg.Done()
 
 	return commits, nil
 }
